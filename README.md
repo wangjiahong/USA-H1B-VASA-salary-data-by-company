@@ -9,7 +9,9 @@ An analysis of **BASE SALARY** figures from US H1B visa LCA filings, aggregated 
 | `scripts/config.py` | 37 companies × 6 roles × 5 years config + alias mapping |
 | `scripts/fetch_h1b.py` | Scrapes h1bdata.info into `data/raw/*.csv` with caching, retries, rate-limiting |
 | `scripts/build_report.py` | Builds 8 interactive Plotly figures and renders `output/report.html` |
+| `scripts/geocode.py` | Offline city-to-(lat,lon) lookup with aliases for CDPs and typos |
 | `scripts/report_template.html` | Jinja2 dark-themed layout |
+| `data/lookups/us_cities.csv` | US city coordinates ([kelvins/US-Cities-Database](https://github.com/kelvins/US-Cities-Database)) |
 | `Explore_data.ipynb` | The original exploratory notebook (kept for reference) |
 | `fetchdata.py` | The original one-shot fetch script |
 
@@ -18,7 +20,7 @@ An analysis of **BASE SALARY** figures from US H1B visa LCA filings, aggregated 
 1. Which companies pay Software Engineers the most?
 2. Inside each company, how do pay grades differ by role?
 3. How has SWE base salary moved year-over-year (2021-2025)?
-4. Where are the highest-paying US cities and states?
+4. Where are the highest-paying US cities? (interactive scatter map with ~112 cities)
 5. Who has the highest ceiling for senior SWE pay (P95)?
 6. Do China-affiliated US subsidiaries pay competitively with FAANG?
 7. Do AI-native companies (OpenAI, Anthropic) + NVIDIA out-pay FAANG on ML roles?

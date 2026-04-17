@@ -17,6 +17,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from config import COMPANIES, JOBS, SALARY_MAX, SALARY_MIN, YEARS  # noqa: E402
+from geocode import geocode_location  # noqa: E402
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 COMBINED = PROJECT_ROOT / "data" / "combined.parquet"
@@ -230,48 +231,95 @@ def q4_geo_distribution(df: pd.DataFrame) -> dict:
     swe = df[df["job_key"] == "swe"].copy()
     swe["state"] = swe["LOCATION"].map(state_from_location)
     swe["city"] = swe["LOCATION"].map(city_from_location)
-    state_stats = (
-        swe.dropna(subset=["state"]).groupby("state")["BASE SALARY"]
-        .agg(["median", "count"]).reset_index()
+    coords = swe["LOCATION"].map(geocode_location)
+    swe["lat"] = coords.map(lambda x: x[0] if x else None)
+    swe["lon"] = coords.map(lambda x: x[1] if x else None)
+    located = swe.dropna(subset=["lat", "lon"]).copy()
+
+    city_stats = (
+        located.groupby(["city", "state", "lat", "lon"])["BASE SALARY"]
+        .agg(median="median", count="count", p90=lambda s: s.quantile(0.9))
+        .reset_index()
     )
-    state_stats = state_stats[state_stats["count"] >= 50]
+    city_stats = city_stats[city_stats["count"] >= 20].reset_index(drop=True)
+    city_stats["label"] = city_stats["city"] + ", " + city_stats["state"]
+    city_stats["median"] = city_stats["median"].astype(int)
+    city_stats["p90"] = city_stats["p90"].astype(int)
+
     fig = go.Figure(
-        go.Choropleth(
-            locations=state_stats["state"],
-            z=state_stats["median"],
-            locationmode="USA-states",
-            colorscale="Viridis",
-            colorbar_title="Median $",
-            hovertext=state_stats.apply(
-                lambda r: f"{r['state']}<br>median=${int(r['median']):,}<br>n={int(r['count']):,}",
+        go.Scattergeo(
+            lat=city_stats["lat"],
+            lon=city_stats["lon"],
+            text=city_stats.apply(
+                lambda r: (
+                    f"<b>{r['label']}</b><br>"
+                    f"Median base: ${r['median']:,}<br>"
+                    f"P90 base: ${r['p90']:,}<br>"
+                    f"Records: {r['count']:,}"
+                ),
                 axis=1,
             ),
             hoverinfo="text",
+            mode="markers",
+            marker=dict(
+                size=city_stats["count"],
+                sizemode="area",
+                sizeref=max(1.0, 2.0 * city_stats["count"].max() / (42.0 ** 2)),
+                sizemin=4,
+                color=city_stats["median"],
+                colorscale="Turbo",
+                cmin=city_stats["median"].quantile(0.05),
+                cmax=city_stats["median"].quantile(0.95),
+                line=dict(color="rgba(255,255,255,0.35)", width=0.5),
+                colorbar=dict(
+                    title="Median<br>base ($)",
+                    thickness=14,
+                    len=0.75,
+                ),
+                showscale=True,
+                opacity=0.88,
+            ),
         )
     )
     fig.update_layout(
-        geo=dict(scope="usa", bgcolor="rgba(0,0,0,0)"),
+        geo=dict(
+            scope="usa",
+            projection_type="albers usa",
+            bgcolor="rgba(0,0,0,0)",
+            showland=True,
+            landcolor="rgba(40,48,66,0.6)",
+            showsubunits=True,
+            subunitcolor="rgba(120,130,150,0.4)",
+            showcountries=False,
+            showlakes=False,
+        ),
         template=PLOTLY_TEMPLATE,
-        title=dict(text="Median SWE base salary by state (states with >=50 filings)", x=0.02, font=dict(size=16)),
+        title=dict(
+            text=f"SWE base salary by city — {len(city_stats)} US cities, bubble size = records, color = median",
+            x=0.02,
+            font=dict(size=16),
+        ),
         margin=dict(l=20, r=20, t=56, b=20),
         paper_bgcolor="rgba(0,0,0,0)",
         font=dict(color="#e6eaf2"),
-        height=500,
+        height=560,
     )
-    top_states = state_stats.sort_values("median", ascending=False).head(3)["state"].tolist()
+
+    top_cities = city_stats.sort_values("median", ascending=False).head(5)["label"].tolist()
+    densest = city_stats.sort_values("count", ascending=False).head(3)["label"].tolist()
     insight = (
-        f"SWE pay concentrates in coastal tech hubs — top states by median: "
-        f"{', '.join(top_states)}. States with fewer than 50 filings are omitted for stability."
+        f"Top cities by median SWE base: {', '.join(top_cities)}. "
+        f"Densest filing hubs: {', '.join(densest)}. "
+        f"Hover any bubble for median, P90 and record count; bubble size shows volume. "
+        f"Cities with <20 filings are filtered for stability."
     )
-    city_stats = (
-        swe.dropna(subset=["city"]).groupby("city")["BASE SALARY"]
-        .agg(["median", "count"]).reset_index()
-    )
-    city_stats = city_stats[city_stats["count"] >= 100].sort_values("median", ascending=False).head(25)
+
+    table_src = city_stats.sort_values("median", ascending=False).head(25).copy()
+    table_src["Median base"] = table_src["median"].map(fmt_money)
+    table_src["P90 base"] = table_src["p90"].map(fmt_money)
     tbl = (
-        city_stats.assign(**{"median base": city_stats["median"].map(fmt_money)})
-        .rename(columns={"city": "City", "count": "Records"})
-        [["City", "median base", "Records"]]
+        table_src.rename(columns={"label": "City", "count": "Records"})
+        [["City", "Median base", "P90 base", "Records"]]
         .to_html(index=False, classes="tbl", border=0)
     )
     return {
