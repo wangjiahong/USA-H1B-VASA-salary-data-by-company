@@ -1,0 +1,12 @@
+jupyter
+ipykernel
+pandas
+requests
+lxml
+html5lib
+beautifulsoup4
+seaborn
+matplotlib
+plotly
+jinja2
+pyarrow

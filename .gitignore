@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+data/raw/
+data/combined.parquet
+data/combined.csv
+output/report.html
+Explore_data.executed.ipynb
+Explore_data.original.ipynb
